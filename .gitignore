@@ -2,3 +2,6 @@ node_modules/
 dist/
 .env
 /src/generated/prisma
+
+docs/learning-log.md
+LLM Gateway - Project Brief.md
