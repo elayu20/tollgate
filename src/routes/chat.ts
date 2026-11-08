@@ -1,3 +1,4 @@
+import { authenticate } from "../auth/authenticate";
 import type { FastifyInstance } from "fastify";
 import { mockProvider } from "../providers/mock";
 import type { ChatMessage } from "../providers/types";
@@ -30,6 +31,9 @@ const chatBodySchema = {
 } as const;
 
 export async function chatRoutes(app: FastifyInstance) {
+  app.decorateRequest("apiKey", null);
+  app.addHook("onRequest", authenticate);
+
   app.post<{ Body: ChatBody }>("/v1/chat", { schema: { body: chatBodySchema } }, async (request) => {
     const { model = "mock-1", messages, max_tokens = 512 } = request.body;
 

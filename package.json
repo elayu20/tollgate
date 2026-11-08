@@ -11,7 +11,8 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "dev:mock": "tsx watch src/mock-provider/server.ts"
+    "dev:mock": "tsx watch src/mock-provider/server.ts",
+    "create-key": "tsx src/scripts/create-key.ts"
   },
   "keywords": [],
   "devDependencies": {
