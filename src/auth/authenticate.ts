@@ -5,7 +5,7 @@ import { hashApiKey } from "./keys";
 
 declare module "fastify" {
     interface FastifyRequest {
-        apiKey: ApiKey;
+        apiKey: ApiKey | null;
     }
 }
 
