@@ -1,0 +1,50 @@
+# Test requests for the VS Code "REST Client" extension.
+# Click "Send Request" above any request. Separate requests with ###.
+
+@baseUrl = http://localhost:3000
+@apiKey = {{$dotenv API_KEY}}
+
+### Health check
+GET {{baseUrl}}/health
+
+### Chat (valid key)
+POST {{baseUrl}}/v1/chat
+Authorization: Bearer {{apiKey}}
+Content-Type: application/json
+
+{
+  "model": "mock-1",
+  "messages": [
+    { "role": "user", "content": "hi" }
+  ]
+}
+
+### Chat (missing key, expect 401)
+POST {{baseUrl}}/v1/chat
+Content-Type: application/json
+
+{
+  "messages": [
+    { "role": "user", "content": "hi" }
+  ]
+}
+
+### Chat (wrong key, expect 401)
+POST {{baseUrl}}/v1/chat
+Authorization: Bearer tg_live_notarealkey
+Content-Type: application/json
+
+{
+  "messages": [
+    { "role": "user", "content": "hi" }
+  ]
+}
+
+### Chat (bad body, expect 400)
+POST {{baseUrl}}/v1/chat
+Authorization: Bearer {{apiKey}}
+Content-Type: application/json
+
+{
+  "messages": []
+}
