@@ -4,6 +4,7 @@ import { mockProvider } from "../providers/mock";
 import { type ChatMessage, ProviderError } from "../providers/types";
 import { recordUsage, type UsageEntry } from "../usage";
 import { enforceRateLimit } from "../rateLimit";
+import { cacheKey, getCached, setCached } from "../cache";
 
 interface ChatBody {
   model?: string;
@@ -42,14 +43,36 @@ export async function chatRoutes(app: FastifyInstance) {
   app.addHook("onRequest", authenticate);
   app.addHook("onRequest", enforceRateLimit); // hooks run in the order they're added
 
-  app.post<{ Body: ChatBody }>("/v1/chat", { schema: { body: chatBodySchema } }, async (request) => {
+  app.post<{ Body: ChatBody }>("/v1/chat", { schema: { body: chatBodySchema } }, async (request, reply) => {
     const { model = "mock-1", messages, max_tokens = 512 } = request.body;
     const apiKeyId = request.apiKey!.id; // the onRequest hook guarantees a key by now
     const start = performance.now();
+    const key = cacheKey(model, messages, max_tokens);
+
+    const cached = await getCached(key);
+    if (cached) {
+      recordInBackground(request, {
+        apiKeyId,
+        provider: cached.provider,
+        model: cached.model,
+        inputTokens: cached.usage.inputTokens,
+        outputTokens: cached.usage.outputTokens,
+        latencyMs: Math.round(performance.now() - start),
+        status: 200,
+        cached: true,
+      });
+
+      reply.header("x-cache", "HIT");
+      return cached;
+    }
 
     try {
       const response = await mockProvider.complete({ model, messages, maxTokens: max_tokens });
 
+      // Same as usage: a failed cache write shouldn't fail a request that already succeeded
+      setCached(key, response).catch((err) => request.log.error({ err }, "failed to cache response"));
+
+      reply.header("x-cache", "MISS");
       recordInBackground(request, {
         apiKeyId,
         provider: response.provider,

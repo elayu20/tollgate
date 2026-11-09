@@ -16,7 +16,8 @@ export async function recordUsage(entry: UsageEntry): Promise<void> {
   await prisma.usageLog.create({
     data: {
       ...entry,
-      costUsd: estimateCost(entry.model, entry.inputTokens, entry.outputTokens),
+      // A cache hit never reached the AI, so it cost nothing
+      costUsd: entry.cached ? 0 : estimateCost(entry.model, entry.inputTokens, entry.outputTokens),
     },
   });
 }

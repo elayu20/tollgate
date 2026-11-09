@@ -12,4 +12,5 @@ export const config = {
   redisUrl: process.env.REDIS_URL ?? "redis://localhost:6379",
   mockProviderUrl: process.env.MOCK_PROVIDER_URL ?? "http://localhost:4000",
   providerTimeoutMs: Number(process.env.PROVIDER_TIMEOUT_MS ?? 30000),
+  cacheTtlSeconds: Number(process.env.CACHE_TTL_SECONDS ?? 3600),
 };
