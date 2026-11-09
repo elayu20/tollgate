@@ -1,32 +1,62 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { redis } from "./redis";
 
-const WINDOW_SECONDS = 60;
-
 export interface RateLimitResult {
   allowed: boolean;
   limit: number;
   remaining: number;
-  resetInSeconds: number;
+  resetInSeconds: number; // until the bucket is full again
+  retryAfterSeconds: number; // until the next token, 0 if allowed
 }
 
-// Fixed window: one counter per key per minute, deleted by Redis when the minute is up.
+// Token bucket, run inside Redis as one Lua script so two requests at the same
+// moment can't both read the same token count and both spend the last token.
+// The bucket is a hash: { tokens, updatedAt (ms) }.
+const TOKEN_BUCKET_SCRIPT = `
+local key = KEYS[1]
+local capacity = tonumber(ARGV[1])
+local refillPerMs = tonumber(ARGV[2])
+local now = tonumber(ARGV[3])
+
+local bucket = redis.call("HMGET", key, "tokens", "updatedAt")
+local tokens = tonumber(bucket[1]) or capacity
+local updatedAt = tonumber(bucket[2]) or now
+
+tokens = math.min(capacity, tokens + (now - updatedAt) * refillPerMs)
+
+local allowed = 0
+if tokens >= 1 then
+  tokens = tokens - 1
+  allowed = 1
+end
+
+redis.call("HSET", key, "tokens", tokens, "updatedAt", now)
+redis.call("PEXPIRE", key, math.ceil(capacity / refillPerMs))
+
+return { allowed, tostring(tokens) }
+`;
+
 export async function checkRateLimit(apiKeyId: string, limit: number): Promise<RateLimitResult> {
-  const window = Math.floor(Date.now() / 1000 / WINDOW_SECONDS);
-  const counterKey = `ratelimit:${apiKeyId}:${window}`;
+  const refillPerMs = limit / 60_000; // limit is per minute
 
-  const count = await redis.incr(counterKey);
-  if (count === 1) {
-    await redis.expire(counterKey, WINDOW_SECONDS);
-  }
+  const [allowed, tokensLeft] = (await redis.eval(
+    TOKEN_BUCKET_SCRIPT,
+    1,
+    `ratelimit:${apiKeyId}`,
+    limit,
+    refillPerMs,
+    Date.now(), // the gateway's clock; Docker Desktop's VM clock (Redis TIME) drifts on Windows
+  )) as [number, string];
 
-  const resetInSeconds = WINDOW_SECONDS - (Math.floor(Date.now() / 1000) % WINDOW_SECONDS);
+  const tokens = Number(tokensLeft);
+  const msPerToken = 1 / refillPerMs;
 
   return {
-    allowed: count <= limit,
+    allowed: allowed === 1,
     limit,
-    remaining: Math.max(0, limit - count),
-    resetInSeconds,
+    remaining: Math.floor(tokens),
+    resetInSeconds: Math.ceil(((limit - tokens) * msPerToken) / 1000),
+    retryAfterSeconds: allowed === 1 ? 0 : Math.ceil(((1 - tokens) * msPerToken) / 1000),
   };
 }
 
@@ -40,7 +70,7 @@ export async function enforceRateLimit(request: FastifyRequest, reply: FastifyRe
   reply.header("x-ratelimit-reset", result.resetInSeconds);
 
   if (!result.allowed) {
-    reply.header("retry-after", result.resetInSeconds);
+    reply.header("retry-after", result.retryAfterSeconds);
     return reply.code(429).send({ error: "rate limit exceeded" });
   }
 }
