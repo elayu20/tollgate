@@ -9,6 +9,7 @@ function required(name: string): string {
 export const config = {
   port: Number(process.env.PORT ?? 3000),
   databaseUrl: required("DATABASE_URL"),
+  redisUrl: process.env.REDIS_URL ?? "redis://localhost:6379",
   mockProviderUrl: process.env.MOCK_PROVIDER_URL ?? "http://localhost:4000",
   providerTimeoutMs: Number(process.env.PROVIDER_TIMEOUT_MS ?? 30000),
 };

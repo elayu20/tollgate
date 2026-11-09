@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { mockProvider } from "../providers/mock";
 import { type ChatMessage, ProviderError } from "../providers/types";
 import { recordUsage, type UsageEntry } from "../usage";
+import { enforceRateLimit } from "../rateLimit";
 
 interface ChatBody {
   model?: string;
@@ -39,6 +40,7 @@ function recordInBackground(request: FastifyRequest, entry: UsageEntry) {
 export async function chatRoutes(app: FastifyInstance) {
   app.decorateRequest("apiKey", null);
   app.addHook("onRequest", authenticate);
+  app.addHook("onRequest", enforceRateLimit); // hooks run in the order they're added
 
   app.post<{ Body: ChatBody }>("/v1/chat", { schema: { body: chatBodySchema } }, async (request) => {
     const { model = "mock-1", messages, max_tokens = 512 } = request.body;
